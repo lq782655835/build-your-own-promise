@@ -2,8 +2,8 @@ function Promise(executor) {
     var self = this
     self.status = 'pending' // Promise当前的状态
     self.data = undefined  // Promise的值
-    self.onResolvedCallback = [] // Promise resolve时的回调函数集，因为在Promise结束之前有可能有多个回调添加到它上面
-    self.onRejectedCallback = [] // Promise reject时的回调函数集，因为在Promise结束之前有可能有多个回调添加到它上面
+    self.onResolvedCallback = [] // Promise resolve时的回调函数集
+    self.onRejectedCallback = [] // Promise reject时的回调函数集
 
     function resolve(value) {
         if (self.status === 'pending') {
@@ -25,85 +25,45 @@ function Promise(executor) {
         }
     }
 
-    try { // 考虑到执行executor的过程中有可能出错，所以我们用try/catch块给包起来，并且在出错后以catch到的值reject掉这个Promise
-        executor(resolve, reject) // 执行executor
-    } catch(e) {
-        reject(e)
-    }
+    executor(resolve, reject) // 执行new Promise()时，传入的function。等于说每次新建new Promise实例，总会执行传入的函数
 }
 
 Promise.prototype.then = function(onResolved, onRejected) {
     var self = this
-    var promise2
+    var promise2 // 重要，根据Promise A+标准，then方法总是返回一个新的promise2 = new Promise()，这点非常重要
 
-    // 根据标准，如果then的参数不是function，则我们需要忽略它，此处以如下方式处理
-    onResolved = typeof onResolved === 'function' ? onResolved : function(value) {}
-    onRejected = typeof onRejected === 'function' ? onRejected : function(reason) {}
+    // 状态处理，大部分走pending
+    if (self.status === 'pending') {
+      return promise2 = new Promise(function(resolve, reject) {
+        // resolvedCallback调用时间：promise1调用resolve
+        var resolvedCallback = function(value) {
+            var x = onResolved(self.data)
+            resolve(x) // 重要。这是promise2的resolve，触发链式调用
+        }
+        var rejectedCallback = function(reason) {
+          var x = onRejected(self.data)
+          reject(x)
+        }
+
+        // 如果当前的Promise还处于pending状态，我们并不能确定调用onResolved还是onRejected，只能等到Promise的状态确定后，才能确实如何处理.
+        // 重要：第一个then()回调，放进promise1.callbacks，第二个then()，放进promise2.callback。
+        self.onResolvedCallback.push(resolvedCallback)
+        self.onRejectedCallback.push(rejectedCallback)
+      })
+    }
 
     if (self.status === 'resolved') {
-      // 如果promise1(此处即为this/self)的状态已经确定并且是resolved，我们调用onResolved
-      // 因为考虑到有可能throw，所以我们将其包在try/catch块里
       return promise2 = new Promise(function(resolve, reject) {
-        try {
           var x = onResolved(self.data)
-          if (x instanceof Promise) { // 如果onResolved的返回值是一个Promise对象，直接取它的结果做为promise2的结果
-            x.then(resolve, reject)
-          }
-          resolve(x) // 否则，以它的返回值做为promise2的结果
-        } catch (e) {
-          reject(e) // 如果出错，以捕获到的错误做为promise2的结果
-        }
+          resolve(x)
       })
     }
-
-    // 此处与前一个if块的逻辑几乎相同，区别在于所调用的是onRejected函数，就不再做过多解释
     if (self.status === 'rejected') {
       return promise2 = new Promise(function(resolve, reject) {
-        try {
           var x = onRejected(self.data)
-          if (x instanceof Promise) {
-            x.then(resolve, reject)
-          }
-        } catch (e) {
-          reject(e)
-        }
+          reject(x)
       })
     }
-  
-    if (self.status === 'pending') {
-    // 如果当前的Promise还处于pending状态，我们并不能确定调用onResolved还是onRejected，
-    // 只能等到Promise的状态确定后，才能确实如何处理。
-    // 所以我们需要把我们的**两种情况**的处理逻辑做为callback放入promise1(此处即this/self)的回调数组里
-    // 逻辑本身跟第一个if块内的几乎一致，此处不做过多解释
-      return promise2 = new Promise(function(resolve, reject) {
-        self.onResolvedCallback.push(function(value) {
-          try {
-            var x = onResolved(self.data)
-            if (x instanceof Promise) {
-              x.then(resolve, reject)
-            }
-          } catch (e) {
-            reject(e)
-          }
-        })
-  
-        self.onRejectedCallback.push(function(reason) {
-          try {
-            var x = onRejected(self.data)
-            if (x instanceof Promise) {
-              x.then(resolve, reject)
-            }
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
-    }
-  }
-  
-  // 为了下文方便，我们顺便实现一个catch方法
-  Promise.prototype.catch = function(onRejected) {
-    return this.then(null, onRejected)
   }
 
 module.exports = Promise

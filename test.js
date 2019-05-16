@@ -1,6 +1,6 @@
-var Promise = require('./promise')
+var Promise = require('./promise-simple')
 
-var promise = new Promise(function(resolve, reject){
+new Promise(function(resolve, reject){
     setTimeout(function(){
         resolve('helloworld')
     }, 0)
